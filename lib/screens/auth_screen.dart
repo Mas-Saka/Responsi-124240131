@@ -109,7 +109,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       ),
                     ),
                     const Text(
-                      'Berita Luar Angkasa Terkini',
+                      'Berita Luar Angkasa',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: green, letterSpacing: 3),
                     ),

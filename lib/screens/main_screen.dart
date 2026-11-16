@@ -15,52 +15,61 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int selectedIndex = 0;
-  String searchText = '';
-  final searchController = TextEditingController();
   late Future<List<Berita>> beritaFuture;
+
   List<int> favoriteIds = [];
+  List<String> newsSites = [];
   String username = 'Pengguna';
+  String selectedNewsSite = '';
 
   @override
   void initState() {
     super.initState();
     beritaFuture = ApiService.getBerita();
     loadLocalData();
-  }
-
-  @override
-  void dispose() {
-    searchController.dispose();
-    super.dispose();
+    loadNewsSites();
   }
 
   Future<void> loadLocalData() async {
-    final id = await LocalService.getFavorites();
-    final titles = await LocalService.getUsername();
+    final ids = await LocalService.getFavorites();
+    final user = await LocalService.getUsername();
+
     if (mounted) {
       setState(() {
-        favoriteIds = id;
-        titles = title;
+        favoriteIds = ids;
+        username = user;
       });
+    }
+  }
+
+  Future<void> loadNewsSites() async {
+    try {
+      final articles = await ApiService.getBerita();
+      final sites =
+          articles
+              .map((article) => article.news_site)
+              .where((site) => site.isNotEmpty && site != '-')
+              .toSet()
+              .toList()
+            ..sort();
+
+      if (mounted) {
+        setState(() => newsSites = sites);
+      }
+    } catch (_) {
+      // Daftar sumber akan tetap kosong jika API sedang tidak tersedia.
     }
   }
 
   void loadBerita() {
     setState(() {
-      beritaFuture = ApiService.getBerita(title: searchText);
+      beritaFuture = ApiService.getBerita(news_site: selectedNewsSite);
     });
   }
 
-  Future<void> toggleFavorite(int id) async {
-    setState(() {
-      if (favoriteIds.contains(id)) {
-        favoriteIds.remove(id);
-      } else {
-        favoriteIds.add(id);
-      }
-    });
-    await LocalService.saveFavorites(favoriteIds);
+  Future<void> toggleFavorite(Berita berita) async {
+    await LocalService.toggleBookmark(berita);
+    await loadLocalData();
   }
 
   Future<void> openDetail(Berita berita) async {
@@ -68,13 +77,13 @@ class _MainScreenState extends State<MainScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => DetailScreen(
-          id: berita.id,
+          berita: berita,
           isFavorite: favoriteIds.contains(berita.id),
           onFavoriteChanged: toggleFavorite,
         ),
       ),
     );
-    loadLocalData();
+    await loadLocalData();
   }
 
   Future<void> logout() async {
@@ -86,15 +95,18 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(selectedIndex == 0 ? 'Explore Berita' : 'My Favorites'),
+        title: Text('Halo, $username'),
         actions: [
           IconButton(
             tooltip: 'Bookmark',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => const BookmarkScreen()),
-            ),
-            icon: const Icon(Icons.movie_outlined),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const BookmarkScreen()),
+              );
+              await loadLocalData();
+            },
+            icon: const Icon(Icons.bookmark_outline),
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.account_circle_outlined),
@@ -121,26 +133,7 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ],
       ),
-      body: selectedIndex == 0 ? buildHome() : buildFavorites(),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selectedIndex,
-        onDestinationSelected: (index) {
-          setState(() => selectedIndex = index);
-          loadLocalData();
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.favorite_border),
-            selectedIcon: Icon(Icons.favorite),
-            label: 'Favorite',
-          ),
-        ],
-      ),
+      body: buildHome(),
     );
   }
 
@@ -148,31 +141,35 @@ class _MainScreenState extends State<MainScreen> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-          child: TextField(
-            controller: searchController,
-            onChanged: (value) {
-              searchText = value;
-              loadBerita();
-            },
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: DropdownButtonFormField<String>(
+            value: selectedNewsSite.isEmpty ? '' : selectedNewsSite,
+            isExpanded: true,
             decoration: InputDecoration(
-              hintText: 'Cari nama Berita...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: IconButton(
-                onPressed: () {
-                  searchController.clear();
-                  searchText = '';
-                  loadBerita();
-                },
-                icon: const Icon(Icons.close),
-              ),
+              labelText: 'Filter sumber berita',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 10,
+              ),
             ),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('Semua sumber')),
+              ...newsSites.map(
+                (site) => DropdownMenuItem(
+                  value: site,
+                  child: Text(site, overflow: TextOverflow.ellipsis),
+                ),
+              ),
+            ],
+            onChanged: (value) {
+              selectedNewsSite = value ?? '';
+              loadBerita();
+            },
           ),
         ),
-
         Expanded(
           child: FutureBuilder<List<Berita>>(
             future: beritaFuture,
@@ -194,7 +191,8 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                         const SizedBox(height: 10),
                         const Text(
-                          'Gagal memuat karakter. Periksa koneksi internet.',
+                          'Gagal memuat berita. Periksa koneksi internet.',
+                          textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 10),
                         FilledButton.icon(
@@ -207,10 +205,12 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 );
               }
+
               final beritas = snapshot.data ?? [];
               if (beritas.isEmpty) {
                 return const Center(child: Text('Berita tidak ditemukan.'));
               }
+
               return ListView.builder(
                 padding: const EdgeInsets.all(14),
                 itemCount: beritas.length,
@@ -220,7 +220,23 @@ class _MainScreenState extends State<MainScreen> {
                     berita: berita,
                     isFavorite: favoriteIds.contains(berita.id),
                     onTap: () => openDetail(berita),
-                    onFavorite: () => toggleFavorite(berita.id),
+                    onFavorite: () async {
+                      final wasFavorite = favoriteIds.contains(berita.id);
+                      await toggleFavorite(berita);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            wasFavorite
+                                ? 'Berita dihapus dari bookmark'
+                                : 'Berita ditambahkan ke bookmark',
+                          ),
+                          backgroundColor: wasFavorite
+                              ? Colors.red
+                              : Colors.green,
+                        ),
+                      );
+                    },
                   );
                 },
               );
@@ -228,95 +244,6 @@ class _MainScreenState extends State<MainScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget buildFavorites() {
-    if (favoriteIds.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.favorite_border, size: 64, color: Colors.grey),
-            SizedBox(height: 12),
-            Text('Belum ada berita favorit.'),
-          ],
-        ),
-      );
-    }
-    return FutureBuilder<List<Berita>>(
-      future: Future.wait(
-        favoriteIds.map((id) => ApiService.getBeritaDetail(id)),
-      ),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Gagal memuat daftar favorit.'),
-                ElevatedButton(
-                  onPressed: () => setState(() {}),
-                  child: const Text('Coba Lagi'),
-                ),
-              ],
-            ),
-          );
-        }
-        final beritas = snapshot.data ?? [];
-        if (beritas.isEmpty) {
-          return const Center(child: Text('Belum ada berita favorit.'));
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.all(14),
-          itemCount: beritas.length,
-          itemBuilder: (context, index) {
-            final berita = beritas[index];
-            return Dismissible(
-              key: ValueKey(berita.id),
-              direction: DismissDirection.endToStart,
-              background: Container(
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.only(right: 22),
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.delete, color: Colors.white),
-              ),
-              onDismissed: (_) async {
-                await toggleFavorite(berita.id);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${berita.title} dihapus dari favorit'),
-                    ),
-                  );
-                }
-              },
-              child: BeritaCard(
-                berita: berita,
-                isFavorite: true,
-                onTap: () => openDetail(berita),
-                onFavorite: () async {
-                  await toggleFavorite(berita.id);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('${berita.title} dihapus dari favorit'),
-                      ),
-                    );
-                  }
-                },
-              ),
-            );
-          },
-        );
-      },
     );
   }
 }

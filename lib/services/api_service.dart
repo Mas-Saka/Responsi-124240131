@@ -1,51 +1,57 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/berita.dart';
-import '../models/bookmark.dart';
 
 class ApiService {
   static const String baseUrl =
-      'https://api.spaceflightnewsapi.net/v4/articles';
+      'https://api.spaceflightnewsapi.net/v4/articles/';
 
-  static Future<List<Berita>> getBerita({
-    String title = '',
-    String image_url = '',
-    String published_at = '',
-    String url = '',
-    String authors = '',
-    String summary = '',
-    String news_site = '',
-  }) async {
-    final query = <String, String>{};
-    if (title.isNotEmpty) query['title'] = title;
-    if (image_url.isNotEmpty) query['image_url'] = image_url;
-    if (published_at.isNotEmpty) query['published_at'] = published_at;
-    if (url.isNotEmpty) query['url'] = url;
-    if (authors.isNotEmpty) query['authors'] = authors;
-    if (summary.isNotEmpty) query['summary'] = summary;
-    if (news_site.isNotEmpty) query['news_site'] = news_site;
+  static Future<List<Berita>> getBerita({String news_site = ''}) async {
+    final query = <String, String>{'limit': '10', 'ordering': '-published_at'};
 
-    final uri = Uri.parse(
-      '$baseUrl/berita',
-    ).replace(queryParameters: query.isEmpty ? null : query);
-    final response = await http.get(uri).timeout(const Duration(seconds: 15));
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final List results = data['results'];
-      return results.map((item) => Berita.fromJson(item)).toList();
+    if (news_site.trim().isNotEmpty) {
+      query['news_site'] = news_site.trim();
     }
-    if (response.statusCode == 404) return [];
-    throw Exception('Gagal mengambil data berita (${response.statusCode})');
+
+    final uri = Uri.parse(baseUrl).replace(queryParameters: query);
+
+    try {
+      final response = await http.get(uri).timeout(const Duration(seconds: 20));
+
+      if (response.statusCode != 200) {
+        throw Exception('HTTP ${response.statusCode}');
+      }
+
+      final data = jsonDecode(response.body);
+      if (data is! Map || data['results'] is! List) {
+        throw Exception('Format data dari API tidak sesuai.');
+      }
+
+      final List results = data['results'];
+      return results
+          .whereType<Map<String, dynamic>>()
+          .map((item) => Berita.fromJson(item))
+          .toList();
+    } catch (e) {
+      throw Exception('Gagal mengambil berita: $e');
+    }
   }
 
   static Future<Berita> getBeritaDetail(int id) async {
-    final response = await http
-        .get(Uri.parse('$baseUrl/berita/$id'))
-        .timeout(const Duration(seconds: 15));
+    final uri = Uri.parse('$baseUrl$id/');
+
+    final response = await http.get(uri).timeout(const Duration(seconds: 20));
+
     if (response.statusCode == 200) {
-      return Berita.fromJson(jsonDecode(response.body));
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic>) {
+        return Berita.fromJson(data);
+      }
+      throw Exception('Format detail berita tidak sesuai.');
     }
-    throw Exception('Gagal mengambil detail berita');
+
+    throw Exception(
+      'Gagal mengambil detail berita: HTTP ${response.statusCode}',
+    );
   }
 }

@@ -15,6 +15,14 @@ class BeritaCard extends StatelessWidget {
     required this.onFavorite,
   });
 
+  String formatDate(String value) {
+    if (value.isEmpty || value == '-') return 'Tanggal tidak tersedia';
+    final date = DateTime.tryParse(value);
+    if (date == null) return value;
+    return '${date.day.toString().padLeft(2, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-${date.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -27,13 +35,13 @@ class BeritaCard extends StatelessWidget {
             Image.network(
               berita.image_url,
               width: 112,
-              height: 112,
+              height: 126,
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) => Container(
                 width: 112,
-                height: 112,
+                height: 126,
                 color: Colors.black12,
-                child: const Icon(Icons.person, size: 40),
+                child: const Icon(Icons.rocket_launch, size: 38),
               ),
             ),
             Expanded(
@@ -44,23 +52,42 @@ class BeritaCard extends StatelessWidget {
                   children: [
                     Text(
                       berita.title,
-                      maxLines: 2,
+                      maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 7),
+                    const SizedBox(height: 8),
+                    Text(
+                      berita.news_site,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF247A58),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      formatDate(berita.published_at),
+                      style: const TextStyle(
+                        color: Colors.grey,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
             IconButton(
+              tooltip: isFavorite ? 'Hapus bookmark' : 'Tambah bookmark',
               onPressed: onFavorite,
               icon: Icon(
-                isFavorite ? Icons.favorite : Icons.favorite_border,
-                color: Colors.red,
+                isFavorite ? Icons.bookmark : Icons.bookmark_border,
+                color: isFavorite ? Colors.orange : Colors.grey,
               ),
             ),
           ],

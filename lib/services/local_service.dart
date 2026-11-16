@@ -1,11 +1,14 @@
 import 'package:hive/hive.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/berita.dart';
 
 class LocalService {
   static const String userBoxName = 'users';
+  static const String bookmarkBoxName = 'bookmarks';
 
   static Future<void> init() async {
     await Hive.openBox(userBoxName);
+    await Hive.openBox(bookmarkBoxName);
   }
 
   static Future<bool> register(String username, String password) async {
@@ -51,18 +54,54 @@ class LocalService {
   }
 
   static Future<List<int>> getFavorites() async {
-    final prefs = await SharedPreferences.getInstance();
-    return (prefs.getStringList('favoriteIds') ?? [])
-        .map((id) => int.tryParse(id) ?? 0)
-        .where((id) => id > 0)
+    final username = await getUsername();
+    final box = Hive.box(bookmarkBoxName);
+    return box.values
+        .where((item) => item['username'] == username)
+        .map<int>((item) => (item['id'] as num).toInt())
         .toList();
   }
 
-  static Future<void> saveFavorites(List<int> ids) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(
-      'favoriteIds',
-      ids.map((id) => id.toString()).toList(),
-    );
+  static Future<List<Berita>> getBookmarks() async {
+    final username = await getUsername();
+    final box = Hive.box(bookmarkBoxName);
+    return box.values
+        .where((item) => item['username'] == username)
+        .map<Berita>(
+          (item) => Berita.fromJson(
+            Map<String, dynamic>.from(item['article']),
+          ),
+        )
+        .toList();
+  }
+
+  static Future<bool> isBookmarked(int id) async {
+    final ids = await getFavorites();
+    return ids.contains(id);
+  }
+
+  static Future<void> saveBookmark(Berita berita) async {
+    final username = await getUsername();
+    final box = Hive.box(bookmarkBoxName);
+    final key = '${username}_${berita.id}';
+    await box.put(key, {
+      'username': username,
+      'id': berita.id,
+      'article': berita.toJson(),
+    });
+  }
+
+  static Future<void> removeBookmark(int id) async {
+    final username = await getUsername();
+    final box = Hive.box(bookmarkBoxName);
+    await box.delete('${username}_$id');
+  }
+
+  static Future<void> toggleBookmark(Berita berita) async {
+    if (await isBookmarked(berita.id)) {
+      await removeBookmark(berita.id);
+    } else {
+      await saveBookmark(berita);
+    }
   }
 }
